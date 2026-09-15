@@ -39,7 +39,17 @@ export function loadConfig() {
       host: (env.HTTP_HOST ?? '').trim() || '127.0.0.1',
       port: int(env.HTTP_PORT, 8025),
     },
+    line: {
+      token: (env.LINE_CHANNEL_ACCESS_TOKEN ?? '').trim(),
+      to: (env.LINE_TO ?? '').trim(),
+      includeSnippet: bool(env.LINE_INCLUDE_SNIPPET, false),
+      openUrl: (env.LINE_OPEN_URL ?? '').trim() || null,
+    },
   };
+
+  if (config.line.openUrl && !/^https:\/\//.test(config.line.openUrl)) {
+    throw new Error(`LINE_OPEN_URL 必須是 https 網址："${config.line.openUrl}"`);
+  }
 
   if (config.since && Number.isNaN(Date.parse(config.since))) {
     throw new Error(`SYNC_SINCE 不是合法的日期："${config.since}"（格式應為 YYYY-MM-DD）`);

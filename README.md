@@ -99,6 +99,44 @@ https://你的電腦名稱.你的-tailnet.ts.net/
 **電腦關機或睡著時手機就連不上**（已抓下來的信還是能離線讀，只是沒有新信）。
 很在意的話就把這套丟到樹莓派或 NAS 上，一樣用 Tailscale 連。
 
+## LINE 通知（選用）
+
+每次同步後推一則摘要卡片到 LINE。**純推播**——你的電腦只是對外呼叫
+`api.line.me`，所以不需要公開網址、不需要 webhook、不用開防火牆。
+
+### 設定
+
+1. <https://developers.line.biz/console/> 建立 Provider，底下建一個 **Messaging API** channel
+2. **Messaging API** 分頁 → Channel access token (long-lived) → Issue
+3. 用手機掃同一頁的 QR code 加 bot 好友
+4. **Basic settings** 分頁最底下 → **Your user ID**（U 開頭那串，不是你的 LINE ID）
+5. 兩個值填進 `.env` 的 `LINE_CHANNEL_ACCESS_TOKEN` 和 `LINE_TO`
+6. `npm run line:test` 確認手機收得到
+
+### 為什麼一次同步只推一則
+
+LINE **按則計費**，免費方案額度不多。一封信推一則的話，一天 20 封就是
+600 則／月，很快就爆。所以不管這次抓到幾封，都只送一張卡片，
+超過 10 封的部分在卡片底下寫「另有 N 封未列出」。
+
+### 推播內容
+
+預設**只有寄件者和主旨**，信件內文不會經過 LINE 的伺服器——把信箱留在本機
+的意義就在這裡。想連摘要一起推就設 `LINE_INCLUDE_SNIPPET=true`，
+但那代表內容會經過第三方。
+
+設了 `LINE_OPEN_URL`（填你的 `tailscale serve` 網址）的話，卡片會多一個
+「開啟收件匣」按鈕，點了直接跳進 PWA 讀全文。
+
+### 搭配定時收信
+
+`deploy/sync.cron` 讓 `npm run sync` 每 15 分鐘跑一次，加上 LINE 推播就是
+完整的自動通知：有新信 → LINE 響 → 點按鈕進 PWA 讀。
+
+> 想要在 LINE 裡打指令（例如傳「收信」叫它去抓）就需要 webhook，
+> 那得有公開 HTTPS endpoint（Cloudflare Tunnel 之類），比目前這套麻煩。
+> 好處是 reply 訊息免費不算額度。目前沒做。
+
 ## 指令
 
 | 指令 | 作用 |
@@ -107,6 +145,7 @@ https://你的電腦名稱.你的-tailnet.ts.net/
 | `npm run sync` | 增量抓取新信件 |
 | `npm run list` | 在終端機列出本機收件匣最新 50 封 |
 | `npm run serve` | 開啟瀏覽介面（列表、讀信、搜尋、下載附件、手機按「收信」） |
+| `npm run line:test` | 送一則測試訊息到 LINE，確認推播設定 |
 | `npm test` | 跑測試 |
 
 ## 本機收件匣長什麼樣
@@ -140,6 +179,8 @@ data/mailbox/
   如果你改用 `HTTP_HOST=0.0.0.0` 或 `tailscale funnel`（公開到整個網際網路），
   等於把信箱攤在網路上——別這樣做，除非你自己加上認證。
 - 信件的 HTML 內容在 `sandbox` iframe 裡算圖，不會執行 script 或載入追蹤像素
+- LINE 推播預設只送寄件者和主旨；開了 `LINE_INCLUDE_SNIPPET` 才會把內文
+  送到 LINE 的伺服器
 
 ## 圖示
 

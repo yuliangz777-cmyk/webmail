@@ -7,6 +7,7 @@ import { Mailbox } from './store.js';
 import { syncFolders } from './sync.js';
 import { requireImapCredentials } from './config.js';
 import { resolveHost } from './network.js';
+import { isConfigured as lineConfigured, notifyNewMail } from './line.js';
 
 const PUBLIC_DIR = path.resolve(fileURLToPath(new URL('../public', import.meta.url)));
 
@@ -68,17 +69,28 @@ async function runSync(req, res, config) {
   if (!inFlightSync) {
     inFlightSync = (async () => {
       requireImapCredentials(config);
-      const { summary } = await syncFolders(config);
-      return summary;
+
+      const arrived = [];
+      const { summary } = await syncFolders(config, {
+        onEvent: (event) => {
+          if (event.type === 'message') arrived.push(event.record);
+        },
+      });
+
+      // Mail is already on disk, so a failed push must not fail the request.
+      if (arrived.length && lineConfigured(config)) {
+        await notifyNewMail(config, arrived).catch((error) =>
+          console.error(`LINE 推播失敗：${error.message}`),
+        );
+      }
+      return { summary, saved: arrived.length };
     })().finally(() => {
       inFlightSync = null;
     });
   }
 
   try {
-    const summary = await inFlightSync;
-    const saved = summary.reduce((total, entry) => total + entry.saved, 0);
-    send(res, 200, { saved, summary });
+    send(res, 200, await inFlightSync);
   } catch (error) {
     send(res, 502, { error: error.message });
   }

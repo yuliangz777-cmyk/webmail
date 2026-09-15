@@ -5,12 +5,14 @@ import { syncFolders } from './sync.js';
 import { Mailbox } from './store.js';
 import { serve } from './server.js';
 import { tailscaleAddress } from './network.js';
+import { isConfigured as lineConfigured, notifyNewMail } from './line.js';
 
 const COMMANDS = {
   sync: cmdSync,
   folders: cmdFolders,
   list: cmdList,
   serve: cmdServe,
+  'line:test': cmdLineTest,
   help: cmdHelp,
 };
 
@@ -34,8 +36,10 @@ async function cmdSync(config) {
   requireImapCredentials(config);
   console.log(`連線 ${config.imap.user} @ ${config.imap.host}:${config.imap.port} …`);
 
-  const { summary, mailbox } = await syncFolders(config, {
+  const arrived = [];
+  const { mailbox } = await syncFolders(config, {
     onEvent(event) {
+      if (event.type === 'message') arrived.push(event.record);
       if (event.type === 'folder-open') {
         const from = event.cursor.reset ? '1（UIDVALIDITY 已變更，重新同步）' : event.cursor.startUid;
         console.log(`\n▸ ${event.folder}（伺服器共 ${event.total} 封）從 UID ${from} 開始`);
@@ -53,10 +57,45 @@ async function cmdSync(config) {
     },
   });
 
-  const saved = summary.reduce((total, entry) => total + entry.saved, 0);
+  const saved = arrived.length;
   console.log(`\n✓ 完成：新增 ${saved} 封，本機收件匣共 ${mailbox.messages.length} 封`);
   console.log(`  位置：${config.mailboxDir}`);
   console.log('  用 `npm run serve` 開啟瀏覽介面');
+
+  await pushToLine(config, arrived);
+}
+
+/** Mail is already on disk by this point, so a failed push is reported, not fatal. */
+async function pushToLine(config, records) {
+  if (!records.length || !lineConfigured(config)) return;
+
+  try {
+    await notifyNewMail(config, records);
+    console.log(`  已推播 ${records.length} 封到 LINE`);
+  } catch (error) {
+    console.error(`\n⚠ LINE 推播失敗（信件已存好）：${error.message}`);
+  }
+}
+
+async function cmdLineTest(config) {
+  if (!lineConfigured(config)) {
+    throw new Error(
+      '還沒設定 LINE。請在 .env 填入 LINE_CHANNEL_ACCESS_TOKEN 和 LINE_TO，\n' +
+        '步驟見 .env.example 的「LINE 通知」段落。',
+    );
+  }
+
+  const sample = [
+    {
+      date: new Date().toISOString(),
+      subject: '[測試] webmail 推播設定成功',
+      from: { name: '你的本機收件匣', address: 'webmail@localhost' },
+      snippet: '如果你在 LINE 看到這張卡片，代表設定完成了。',
+    },
+  ];
+
+  await notifyNewMail(config, sample);
+  console.log('✓ 已送出測試訊息，去 LINE 看看。');
 }
 
 async function cmdFolders(config) {
@@ -119,6 +158,7 @@ webmail — 把 NTU webmail 的信抓進本機自建的收件匣
   npm run sync      增量抓取新信件，存成 .eml + 附件
   npm run list      在終端機列出本機收件匣
   npm run serve     開啟本機瀏覽介面
+  npm run line:test 送一則測試訊息到 LINE，確認推播設定
 
 設定寫在 .env（可從 .env.example 複製）。
 `);

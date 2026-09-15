@@ -15,7 +15,8 @@
     "start": "node src/cli.js serve",
     "test": "node --test tests/*.test.js",
     "demo": "node tools/build-demo.mjs --serve",
-    "build:demo": "node tools/build-demo.mjs"
+    "build:demo": "node tools/build-demo.mjs",
+    "line:test": "node src/cli.js line:test"
   },
   "dependencies": {
     "dotenv": "^16.4.5",
