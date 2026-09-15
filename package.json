@@ -1,0 +1,23 @@
+{
+  "name": "webmail",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Fetch NTU webmail over IMAP into a self-hosted local mailbox",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "sync": "node src/cli.js sync",
+    "folders": "node src/cli.js folders",
+    "list": "node src/cli.js list",
+    "serve": "node src/cli.js serve",
+    "start": "node src/cli.js serve",
+    "test": "node --test tests/*.test.js"
+  },
+  "dependencies": {
+    "dotenv": "^16.4.5",
+    "imapflow": "^1.0.164",
+    "mailparser": "^3.7.1"
+  }
+}

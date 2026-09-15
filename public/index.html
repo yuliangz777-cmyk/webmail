@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="zh-Hant">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>本機收件匣</title>
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' rx='3' fill='%238a5a2b'/%3E%3Cpath d='M3 5.5h10v5.5H3z' fill='none' stroke='%23fff' stroke-width='1.2'/%3E%3Cpath d='M3 5.8l5 3.4 5-3.4' fill='none' stroke='%23fff' stroke-width='1.2'/%3E%3C/svg%3E" />
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <header>
+      <h1>本機收件匣</h1>
+      <input id="search" type="search" placeholder="搜尋主旨、寄件者、內容…" autocomplete="off" />
+      <select id="folder"><option value="">全部資料夾</option></select>
+      <span id="count"></span>
+    </header>
+
+    <main>
+      <ul id="messages" aria-label="信件列表"></ul>
+      <article id="reader"><p class="empty">選一封信來讀。</p></article>
+    </main>
+
+    <script type="module" src="/app.js"></script>
+  </body>
+</html>
