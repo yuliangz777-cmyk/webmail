@@ -4,6 +4,7 @@ const searchEl = document.getElementById('search');
 const folderEl = document.getElementById('folder');
 const countEl = document.getElementById('count');
 const syncEl = document.getElementById('sync');
+const notifyEl = document.getElementById('notify');
 const bannerEl = document.getElementById('banner');
 
 let selectedId = null;
@@ -22,6 +23,7 @@ addEventListener('offline', () => banner(OFFLINE_NOTE, 'warn'));
 await refresh();
 // A cold start while offline fires no 'offline' event, so check directly.
 if (!navigator.onLine) banner(OFFLINE_NOTE, 'warn');
+await setUpNotifications();
 
 /** Ask the machine running the server to fetch new mail from NTU. */
 async function sync() {
@@ -200,4 +202,81 @@ function formatSize(bytes) {
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 ** 2) return `${(bytes / 1024).toFixed(1)} KB`;
   return `${(bytes / 1024 ** 2).toFixed(1)} MB`;
+}
+
+/* ── notifications ───────────────────────────────────────────────────────── */
+
+/**
+ * Show the opt-in button only where a subscription can actually be made. On iOS
+ * that means the app has been added to the home screen; in a plain tab the
+ * PushManager is missing, and offering a button that cannot work is worse than
+ * offering nothing.
+ */
+async function setUpNotifications() {
+  if (!('serviceWorker' in navigator) || !('PushManager' in window) || !('Notification' in window)) return;
+
+  const registration = await navigator.serviceWorker.ready.catch(() => null);
+  if (!registration) return;
+
+  if (await registration.pushManager.getSubscription()) {
+    notifyEl.hidden = false;
+    notifyEl.textContent = '通知已開啟';
+    notifyEl.disabled = true;
+    return;
+  }
+  if (Notification.permission === 'denied') return;
+
+  notifyEl.hidden = false;
+  notifyEl.addEventListener('click', () => subscribe(registration));
+}
+
+async function subscribe(registration) {
+  notifyEl.disabled = true;
+
+  try {
+    if ((await Notification.requestPermission()) !== 'granted') {
+      banner('通知權限被拒絕了。要改的話到系統設定裡找這個 App。', 'warn');
+      notifyEl.hidden = true;
+      return;
+    }
+
+    const { key } = await fetchJson('/api/push/key');
+
+    // subscribe() reaches out to the browser vendor's push service and can hang
+    // indefinitely when that is unreachable, which would leave the button dead
+    // with nothing said. Fail loudly instead.
+    const subscription = await withTimeout(
+      registration.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: base64UrlToBytes(key),
+      }),
+      20000,
+      '連不上瀏覽器的推播服務，請檢查網路後再試一次。',
+    );
+
+    await fetchJson('/api/push/subscribe', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(subscription),
+    });
+
+    notifyEl.textContent = '通知已開啟';
+    banner('有新信時會通知你。', 'ok');
+  } catch (error) {
+    notifyEl.disabled = false;
+    banner(`開啟通知失敗：${error.message}`, 'warn');
+  }
+}
+
+function withTimeout(promise, ms, message) {
+  return Promise.race([
+    promise,
+    new Promise((_, reject) => setTimeout(() => reject(new Error(message)), ms)),
+  ]);
+}
+
+/** applicationServerKey wants raw bytes, and the VAPID key is base64url text. */
+function base64UrlToBytes(value) {
+  const padded = value.replace(/-/g, '+').replace(/_/g, '/').padEnd(Math.ceil(value.length / 4) * 4, '=');
+  return Uint8Array.from(atob(padded), (character) => character.charCodeAt(0));
 }

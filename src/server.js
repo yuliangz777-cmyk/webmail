@@ -7,7 +7,13 @@ import { Mailbox } from './store.js';
 import { syncFolders } from './sync.js';
 import { requireImapCredentials } from './config.js';
 import { resolveHost } from './network.js';
-import { isConfigured as lineConfigured, notifyNewMail } from './line.js';
+import { isConfigured as lineConfigured, notifyNewMail as notifyLine } from './line.js';
+import {
+  addSubscription,
+  isConfigured as pushConfigured,
+  notifyNewMail as notifyPush,
+  removeSubscription,
+} from './push.js';
 
 const PUBLIC_DIR = path.resolve(fileURLToPath(new URL('../public', import.meta.url)));
 
@@ -52,6 +58,9 @@ async function handle(req, res, config) {
   const url = new URL(req.url, `http://${req.headers.host ?? 'localhost'}`);
 
   if (url.pathname === '/api/sync') return runSync(req, res, config);
+  if (url.pathname === '/api/push/key') return sendPushKey(res, config);
+  if (url.pathname === '/api/push/subscribe') return subscribePush(req, res, config);
+  if (url.pathname === '/api/push/unsubscribe') return unsubscribePush(req, res, config);
   if (url.pathname === '/api/messages') return listMessages(res, config, url);
   if (url.pathname.startsWith('/api/messages/')) {
     return readMessage(res, config, decodeURIComponent(url.pathname.slice('/api/messages/'.length)));
@@ -77,12 +86,8 @@ async function runSync(req, res, config) {
         },
       });
 
-      // Mail is already on disk, so a failed push must not fail the request.
-      if (arrived.length && lineConfigured(config)) {
-        await notifyNewMail(config, arrived).catch((error) =>
-          console.error(`LINE 推播失敗：${error.message}`),
-        );
-      }
+      // Mail is already on disk, so a failed notification must not fail the request.
+      if (arrived.length) await notify(config, arrived);
       return { summary, saved: arrived.length };
     })().finally(() => {
       inFlightSync = null;
@@ -93,6 +98,70 @@ async function runSync(req, res, config) {
     send(res, 200, await inFlightSync);
   } catch (error) {
     send(res, 502, { error: error.message });
+  }
+}
+
+/** Notify over every configured channel; a channel that fails is logged, not thrown. */
+export async function notify(config, records) {
+  const channels = [
+    pushConfigured(config) && ['通知', () => notifyPush(config, records)],
+    lineConfigured(config) && ['LINE', () => notifyLine(config, records)],
+  ].filter(Boolean);
+
+  const results = [];
+  for (const [name, run] of channels) {
+    try {
+      results.push({ channel: name, ...(await run()) });
+    } catch (error) {
+      console.error(`${name}推播失敗（信件已存好）：${error.message}`);
+      results.push({ channel: name, error: error.message });
+    }
+  }
+  return results;
+}
+
+function sendPushKey(res, config) {
+  if (!pushConfigured(config)) {
+    return send(res, 503, { error: '伺服器還沒設定 VAPID 金鑰，請先跑 npm run push:keys。' });
+  }
+  send(res, 200, { key: config.push.publicKey });
+}
+
+async function subscribePush(req, res, config) {
+  if (req.method !== 'POST') return send(res, 405, { error: '請用 POST' });
+
+  try {
+    const count = await addSubscription(config, await readJsonBody(req));
+    send(res, 200, { subscribed: true, devices: count });
+  } catch (error) {
+    send(res, 400, { error: error.message });
+  }
+}
+
+async function unsubscribePush(req, res, config) {
+  if (req.method !== 'POST') return send(res, 405, { error: '請用 POST' });
+
+  try {
+    const { endpoint } = await readJsonBody(req);
+    send(res, 200, { devices: await removeSubscription(config, endpoint) });
+  } catch (error) {
+    send(res, 400, { error: error.message });
+  }
+}
+
+async function readJsonBody(req, limit = 64 * 1024) {
+  const chunks = [];
+  let size = 0;
+
+  for await (const chunk of req) {
+    size += chunk.length;
+    if (size > limit) throw new Error('請求內容過大');
+    chunks.push(chunk);
+  }
+  try {
+    return JSON.parse(Buffer.concat(chunks).toString('utf8'));
+  } catch {
+    throw new Error('請求不是合法的 JSON');
   }
 }
 

@@ -5,14 +5,16 @@ import { syncFolders } from './sync.js';
 import { Mailbox } from './store.js';
 import { serve } from './server.js';
 import { tailscaleAddress } from './network.js';
-import { isConfigured as lineConfigured, notifyNewMail } from './line.js';
+import { notify } from './server.js';
+import { generateKeys, isConfigured as pushConfigured, loadSubscriptions } from './push.js';
 
 const COMMANDS = {
   sync: cmdSync,
   folders: cmdFolders,
   list: cmdList,
   serve: cmdServe,
-  'line:test': cmdLineTest,
+  'push:keys': cmdPushKeys,
+  'notify:test': cmdNotifyTest,
   help: cmdHelp,
 };
 
@@ -62,40 +64,53 @@ async function cmdSync(config) {
   console.log(`  位置：${config.mailboxDir}`);
   console.log('  用 `npm run serve` 開啟瀏覽介面');
 
-  await pushToLine(config, arrived);
-}
-
-/** Mail is already on disk by this point, so a failed push is reported, not fatal. */
-async function pushToLine(config, records) {
-  if (!records.length || !lineConfigured(config)) return;
-
-  try {
-    await notifyNewMail(config, records);
-    console.log(`  已推播 ${records.length} 封到 LINE`);
-  } catch (error) {
-    console.error(`\n⚠ LINE 推播失敗（信件已存好）：${error.message}`);
+  for (const result of await notify(config, arrived)) {
+    if (result.error) continue; // notify() already reported it
+    console.log(`  ${result.channel}：已送出`);
   }
 }
 
-async function cmdLineTest(config) {
-  if (!lineConfigured(config)) {
-    throw new Error(
-      '還沒設定 LINE。請在 .env 填入 LINE_CHANNEL_ACCESS_TOKEN 和 LINE_TO，\n' +
-        '步驟見 .env.example 的「LINE 通知」段落。',
-    );
-  }
+function cmdPushKeys() {
+  const { publicKey, privateKey } = generateKeys();
+
+  console.log('把下面兩行貼進 .env：\n');
+  console.log(`VAPID_PUBLIC_KEY=${publicKey}`);
+  console.log(`VAPID_PRIVATE_KEY=${privateKey}`);
+  console.log('\n私鑰不要 commit 進 git（.env 已經在 .gitignore 裡）。');
+  console.log('換過金鑰之後，每台手機都要重新開啟一次通知。');
+}
+
+async function cmdNotifyTest(config) {
+  const devices = pushConfigured(config) ? (await loadSubscriptions(config)).length : 0;
 
   const sample = [
     {
+      id: 'test',
       date: new Date().toISOString(),
-      subject: '[測試] webmail 推播設定成功',
+      subject: '[測試] webmail 通知設定成功',
       from: { name: '你的本機收件匣', address: 'webmail@localhost' },
-      snippet: '如果你在 LINE 看到這張卡片，代表設定完成了。',
+      snippet: '看到這則就代表設定完成了。',
     },
   ];
 
-  await notifyNewMail(config, sample);
-  console.log('✓ 已送出測試訊息，去 LINE 看看。');
+  const results = await notify(config, sample);
+  if (!results.length) {
+    throw new Error(
+      '還沒設定任何通知管道。\n' +
+        'Web Push：跑 npm run push:keys，把金鑰貼進 .env，再到 App 裡按「開啟通知」。\n' +
+        'LINE：見 .env.example 的「LINE 通知」段落。',
+    );
+  }
+
+  for (const result of results) {
+    if (result.error) continue;
+    if (result.reason === 'no-subscriptions') {
+      console.log(`⚠ ${result.channel}：金鑰設好了，但還沒有裝置訂閱。`);
+      console.log('  用手機開啟加到主畫面的 App，按「開啟通知」。');
+      continue;
+    }
+    console.log(`✓ ${result.channel}：已送出${devices ? `（${devices} 台裝置）` : ''}`);
+  }
 }
 
 async function cmdFolders(config) {
@@ -158,7 +173,8 @@ webmail — 把 NTU webmail 的信抓進本機自建的收件匣
   npm run sync      增量抓取新信件，存成 .eml + 附件
   npm run list      在終端機列出本機收件匣
   npm run serve     開啟本機瀏覽介面
-  npm run line:test 送一則測試訊息到 LINE，確認推播設定
+  npm run push:keys   產生 Web Push 金鑰（第一次設定通知時跑）
+  npm run notify:test 送一則測試通知，確認設定
 
 設定寫在 .env（可從 .env.example 複製）。
 `);

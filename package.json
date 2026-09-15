@@ -16,11 +16,13 @@
     "test": "node --test tests/*.test.js",
     "demo": "node tools/build-demo.mjs --serve",
     "build:demo": "node tools/build-demo.mjs",
-    "line:test": "node src/cli.js line:test"
+    "push:keys": "node src/cli.js push:keys",
+    "notify:test": "node src/cli.js notify:test"
   },
   "dependencies": {
     "dotenv": "^16.4.5",
     "imapflow": "^1.0.164",
-    "mailparser": "^3.7.1"
+    "mailparser": "^3.7.1",
+    "web-push": "^3.6.7"
   }
 }

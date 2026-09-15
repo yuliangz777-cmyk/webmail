@@ -39,6 +39,11 @@ export function loadConfig() {
       host: (env.HTTP_HOST ?? '').trim() || '127.0.0.1',
       port: int(env.HTTP_PORT, 8025),
     },
+    push: {
+      publicKey: (env.VAPID_PUBLIC_KEY ?? '').trim(),
+      privateKey: (env.VAPID_PRIVATE_KEY ?? '').trim(),
+      subject: (env.VAPID_SUBJECT ?? '').trim() || 'mailto:webmail@localhost',
+    },
     line: {
       token: (env.LINE_CHANNEL_ACCESS_TOKEN ?? '').trim(),
       to: (env.LINE_TO ?? '').trim(),

@@ -78,3 +78,45 @@ async function cacheFirst(request, cacheName) {
   if (response.ok) (await caches.open(cacheName)).put(request, response.clone());
   return response;
 }
+
+/* ── notifications ───────────────────────────────────────────────────────── */
+
+self.addEventListener('push', (event) => {
+  // A push with no readable payload still deserves a notification: on iOS a
+  // subscription that receives nothing visible can be revoked by the system.
+  let notice = { title: '新信', body: '打開收件匣看看。', tag: 'webmail', url: './' };
+  try {
+    notice = { ...notice, ...event.data.json() };
+  } catch {
+    /* keep the fallback */
+  }
+
+  event.waitUntil(
+    self.registration.showNotification(notice.title, {
+      body: notice.body,
+      tag: notice.tag,
+      icon: './icons/icon-192.png',
+      badge: './icons/icon-192.png',
+      data: { url: notice.url },
+    }),
+  );
+});
+
+self.addEventListener('notificationclick', (event) => {
+  event.notification.close();
+  const target = new URL(event.notification.data?.url ?? './', self.location.href).href;
+
+  event.waitUntil(
+    (async () => {
+      const clients = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
+      // Reuse an open window rather than piling up tabs.
+      for (const client of clients) {
+        if (client.url.startsWith(self.registration.scope) && 'focus' in client) {
+          await client.focus();
+          return;
+        }
+      }
+      await self.clients.openWindow(target);
+    })(),
+  );
+});

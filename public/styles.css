@@ -71,6 +71,19 @@ input { flex: 1; min-width: 180px; font-size: 16px; }  /* 16px stops iOS zooming
 
 #sync:disabled { opacity: .55; cursor: progress; }
 
+#notify {
+  padding: 7px 12px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: transparent;
+  color: var(--accent);
+  font: inherit;
+  cursor: pointer;
+  min-height: 36px;
+}
+
+#notify:disabled { color: var(--muted); cursor: default; }
+
 #banner {
   padding: 9px 20px;
   font-size: 13px;
@@ -132,6 +145,7 @@ main {
   #search { order: 3; flex: 1 1 100%; }
   #folder { order: 4; flex: 1; min-width: 0; }
   #sync { order: 5; }
+  #notify { order: 6; }
   main { grid-template-columns: 1fr; grid-template-rows: 42dvh 1fr; }
   #messages { border-right: 0; border-bottom: 1px solid var(--line); }
   #messages li { padding: 13px 16px; }
