@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  macOS: 讓 webmail 在登入後自動啟動。
+
+    1. 把下面的 /Users/YOU/webmail 換成你實際的路徑
+    2. cp deploy/com.webmail.server.plist ~/Library/LaunchAgents/
+    3. launchctl load ~/Library/LaunchAgents/com.webmail.server.plist
+
+  停用：launchctl unload ~/Library/LaunchAgents/com.webmail.server.plist
+-->
+<plist version="1.0">
+  <dict>
+    <key>Label</key>
+    <string>com.webmail.server</string>
+
+    <key>ProgramArguments</key>
+    <array>
+      <string>/usr/local/bin/node</string>
+      <string>/Users/YOU/webmail/src/cli.js</string>
+      <string>serve</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <string>/Users/YOU/webmail</string>
+
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <true/>
+
+    <key>StandardOutPath</key>
+    <string>/tmp/webmail.log</string>
+    <key>StandardErrorPath</key>
+    <string>/tmp/webmail.err.log</string>
+  </dict>
+</plist>

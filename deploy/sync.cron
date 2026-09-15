@@ -1,0 +1,5 @@
+# 定時收信（每 15 分鐘），這樣手機打開就已經有新信了。
+#
+#   crontab -e   然後貼上下面這行（路徑換成你的）
+#
+*/15 * * * * cd /Users/YOU/webmail && /usr/local/bin/node src/cli.js sync >> /tmp/webmail-sync.log 2>&1

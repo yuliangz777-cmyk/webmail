@@ -3,6 +3,8 @@ const readerEl = document.getElementById('reader');
 const searchEl = document.getElementById('search');
 const folderEl = document.getElementById('folder');
 const countEl = document.getElementById('count');
+const syncEl = document.getElementById('sync');
+const bannerEl = document.getElementById('banner');
 
 let selectedId = null;
 let debounce;
@@ -12,15 +14,56 @@ searchEl.addEventListener('input', () => {
   debounce = setTimeout(refresh, 180);
 });
 folderEl.addEventListener('change', refresh);
+syncEl.addEventListener('click', sync);
+const OFFLINE_NOTE = '離線中 —— 顯示的是上次抓下來的信。';
+addEventListener('online', () => banner(null));
+addEventListener('offline', () => banner(OFFLINE_NOTE, 'warn'));
 
 await refresh();
+// A cold start while offline fires no 'offline' event, so check directly.
+if (!navigator.onLine) banner(OFFLINE_NOTE, 'warn');
+
+/** Ask the machine running the server to fetch new mail from NTU. */
+async function sync() {
+  syncEl.disabled = true;
+  syncEl.textContent = '收信中…';
+  banner(null);
+
+  try {
+    const result = await fetchJson('/api/sync', { method: 'POST' });
+    banner(result.saved ? `收到 ${result.saved} 封新信。` : '沒有新信。', 'ok');
+    await refresh();
+  } catch (error) {
+    banner(
+      navigator.onLine
+        ? `收信失敗：${error.message}`
+        : '連不上跑著 webmail 的那台電腦，可能已關機或離開 Tailscale。',
+      'warn',
+    );
+  } finally {
+    syncEl.disabled = false;
+    syncEl.textContent = '收信';
+  }
+}
+
+function banner(message, tone) {
+  bannerEl.hidden = !message;
+  bannerEl.textContent = message ?? '';
+  bannerEl.className = tone ?? '';
+}
 
 async function refresh() {
   const params = new URLSearchParams();
   if (searchEl.value.trim()) params.set('q', searchEl.value.trim());
   if (folderEl.value) params.set('folder', folderEl.value);
 
-  const data = await fetchJson(`/api/messages?${params}`);
+  let data;
+  try {
+    data = await fetchJson(`/api/messages?${params}`);
+  } catch {
+    banner('連不上伺服器，顯示的是快取內容。', 'warn');
+    return;
+  }
   syncFolderOptions(data.folders);
   countEl.textContent = `${data.total} 封`;
   render(data.messages);
@@ -119,8 +162,8 @@ async function open(id) {
   }
 }
 
-async function fetchJson(url) {
-  const response = await fetch(url);
+async function fetchJson(url, options) {
+  const response = await fetch(url, options);
   const data = await response.json();
   if (!response.ok) throw new Error(data.error ?? response.statusText);
   return data;

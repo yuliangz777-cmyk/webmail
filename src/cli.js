@@ -4,6 +4,7 @@ import { connect, listFolders } from './imap.js';
 import { syncFolders } from './sync.js';
 import { Mailbox } from './store.js';
 import { serve } from './server.js';
+import { tailscaleAddress } from './network.js';
 
 const COMMANDS = {
   sync: cmdSync,
@@ -92,10 +93,22 @@ async function cmdList(config) {
 
 async function cmdServe(config) {
   const mailbox = await new Mailbox(config.mailboxDir).open();
-  await serve(config);
+  const server = await serve(config);
+  const { address, port } = server.address();
+
   console.log(`本機收件匣：${config.mailboxDir}（${mailbox.messages.length} 封）`);
-  console.log(`瀏覽介面：http://${config.http.host}:${config.http.port}`);
-  console.log('按 Ctrl+C 結束。');
+  console.log(`瀏覽介面：http://${address}:${port}`);
+
+  if (address === '127.0.0.1') {
+    const tailnet = tailscaleAddress();
+    console.log(
+      tailnet
+        ? `\n手機要連的話，另開一個終端機跑：tailscale serve --bg ${port}\n` +
+            '然後用 `tailscale serve status` 印出來的 https 網址加到主畫面。'
+        : '\n只有這台電腦連得到。要讓手機也能用，請看 README 的「裝到手機主畫面」。',
+    );
+  }
+  console.log('\n按 Ctrl+C 結束。');
 }
 
 function cmdHelp() {

@@ -13,6 +13,8 @@ async function fixture(t) {
   const config = {
     mailboxDir: path.join(dir, 'mailbox'),
     http: { host: '127.0.0.1', port: 0 },
+    imap: { host: '', user: '', pass: '' },
+    folders: ['INBOX'],
   };
 
   const mailbox = await new Mailbox(config.mailboxDir).open();
@@ -45,7 +47,7 @@ async function fixture(t) {
   t.after(() => new Promise((resolve) => server.close(resolve)));
 
   const { port } = server.address();
-  return (route) => fetch(`http://127.0.0.1:${port}${route}`);
+  return (route, options) => fetch(`http://127.0.0.1:${port}${route}`, options);
 }
 
 test('lists messages and exposes the folders present locally', async (t) => {
@@ -95,6 +97,38 @@ test('refuses to serve files outside the public directory', async (t) => {
   const get = await fixture(t);
   const response = await get('/../package.json');
   assert.ok([403, 404].includes(response.status), `unexpected status ${response.status}`);
+});
+
+test('the sync endpoint rejects GET', async (t) => {
+  const get = await fixture(t);
+  const response = await get('/api/sync');
+
+  assert.equal(response.status, 405);
+  assert.match((await response.json()).error, /POST/);
+});
+
+test('syncing without credentials reports what is missing instead of hanging', async (t) => {
+  const get = await fixture(t);
+  const response = await get('/api/sync', { method: 'POST' });
+
+  assert.equal(response.status, 502);
+  assert.match((await response.json()).error, /IMAP_HOST/);
+});
+
+test('serves the manifest and service worker the installed app needs', async (t) => {
+  const get = await fixture(t);
+
+  const manifest = await get('/manifest.webmanifest');
+  assert.equal(manifest.status, 200);
+  assert.match(manifest.headers.get('content-type'), /manifest\+json/);
+
+  const sw = await get('/sw.js');
+  assert.equal(sw.status, 200);
+  assert.match(sw.headers.get('content-type'), /javascript/);
+
+  const icon = await get('/icons/icon-192.png');
+  assert.equal(icon.status, 200);
+  assert.equal(icon.headers.get('content-type'), 'image/png');
 });
 
 test('serves the browser UI at the root', async (t) => {

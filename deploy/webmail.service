@@ -1,0 +1,23 @@
+# Linux: 開機自動啟動 webmail。
+#
+#   1. 把下面的 YOU 和路徑換掉
+#   2. sudo cp deploy/webmail.service /etc/systemd/system/
+#   3. sudo systemctl enable --now webmail
+#
+# 看紀錄：journalctl -u webmail -f
+
+[Unit]
+Description=Local NTU webmail mirror
+After=network-online.target tailscaled.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=YOU
+WorkingDirectory=/home/YOU/webmail
+ExecStart=/usr/bin/node /home/YOU/webmail/src/cli.js serve
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

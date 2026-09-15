@@ -4,6 +4,9 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { simpleParser } from 'mailparser';
 import { Mailbox } from './store.js';
+import { syncFolders } from './sync.js';
+import { requireImapCredentials } from './config.js';
+import { resolveHost } from './network.js';
 
 const PUBLIC_DIR = path.resolve(fileURLToPath(new URL('../public', import.meta.url)));
 
@@ -11,8 +14,14 @@ const CONTENT_TYPES = {
   '.html': 'text/html; charset=utf-8',
   '.css': 'text/css; charset=utf-8',
   '.js': 'text/javascript; charset=utf-8',
+  '.json': 'application/json; charset=utf-8',
+  '.webmanifest': 'application/manifest+json; charset=utf-8',
+  '.png': 'image/png',
   '.svg': 'image/svg+xml',
 };
+
+/** One sync at a time: concurrent runs would fight over the index file. */
+let inFlightSync = null;
 
 export async function serve(config) {
   const server = http.createServer((req, res) => {
@@ -21,13 +30,27 @@ export async function serve(config) {
     });
   });
 
-  await new Promise((resolve) => server.listen(config.http.port, config.http.host, resolve));
+  const host = resolveHost(config.http.host);
+  await new Promise((resolve, reject) => {
+    server.once('error', (error) => {
+      reject(
+        error.code === 'EADDRINUSE'
+          ? new Error(
+              `連接埠 ${config.http.port} 已被占用——可能是另一個 webmail 還開著。\n` +
+                '關掉它，或在 .env 改 HTTP_PORT。',
+            )
+          : error,
+      );
+    });
+    server.listen(config.http.port, host, resolve);
+  });
   return server;
 }
 
 async function handle(req, res, config) {
   const url = new URL(req.url, `http://${req.headers.host ?? 'localhost'}`);
 
+  if (url.pathname === '/api/sync') return runSync(req, res, config);
   if (url.pathname === '/api/messages') return listMessages(res, config, url);
   if (url.pathname.startsWith('/api/messages/')) {
     return readMessage(res, config, decodeURIComponent(url.pathname.slice('/api/messages/'.length)));
@@ -37,6 +60,28 @@ async function handle(req, res, config) {
     return sendAttachment(res, config, decodeURIComponent(id), Number(index));
   }
   return sendStatic(res, url.pathname);
+}
+
+async function runSync(req, res, config) {
+  if (req.method !== 'POST') return send(res, 405, { error: '請用 POST' });
+
+  if (!inFlightSync) {
+    inFlightSync = (async () => {
+      requireImapCredentials(config);
+      const { summary } = await syncFolders(config);
+      return summary;
+    })().finally(() => {
+      inFlightSync = null;
+    });
+  }
+
+  try {
+    const summary = await inFlightSync;
+    const saved = summary.reduce((total, entry) => total + entry.saved, 0);
+    send(res, 200, { saved, summary });
+  } catch (error) {
+    send(res, 502, { error: error.message });
+  }
 }
 
 async function listMessages(res, config, url) {
